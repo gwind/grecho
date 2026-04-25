@@ -1,6 +1,5 @@
 use actix_web::{
-    web, App, HttpRequest, HttpResponse, HttpServer, Result as ActixResult,
-    middleware::Logger,
+    middleware::Logger, web, App, HttpRequest, HttpResponse, HttpServer, Result as ActixResult,
 };
 use clap::{Arg, Command};
 use serde::Deserialize;
@@ -58,7 +57,11 @@ impl Settings {
     }
 }
 
-async fn echo_handler(req: HttpRequest, body: web::Bytes, verbose: web::Data<bool>) -> ActixResult<HttpResponse> {
+async fn echo_handler(
+    req: HttpRequest,
+    body: web::Bytes,
+    verbose: web::Data<bool>,
+) -> ActixResult<HttpResponse> {
     let headers = req.headers();
     let reserved_headers: HashSet<&str> = RESERVED_HEADERS.iter().cloned().collect();
 
@@ -99,7 +102,7 @@ async fn echo_handler(req: HttpRequest, body: web::Bytes, verbose: web::Data<boo
     // Create response with the determined status code
     let mut response = HttpResponse::build(
         actix_web::http::StatusCode::from_u16(status_code)
-            .unwrap_or(actix_web::http::StatusCode::OK)
+            .unwrap_or(actix_web::http::StatusCode::OK),
     );
 
     // Copy non-reserved headers to response, excluding internal headers
@@ -109,8 +112,8 @@ async fn echo_handler(req: HttpRequest, body: web::Bytes, verbose: web::Data<boo
         // Skip reserved headers and internal control headers
         if !reserved_headers.contains(header_name.as_str())
             && header_name != INTERNAL_STATUS_CODE_HEADER.to_lowercase()
-            && header_name != INTERNAL_RESPONSE_BODY_HEADER.to_lowercase() {
-
+            && header_name != INTERNAL_RESPONSE_BODY_HEADER.to_lowercase()
+        {
             if let Ok(header_value) = value.to_str() {
                 response.insert_header((name.clone(), header_value));
             }
@@ -126,7 +129,8 @@ async fn echo_handler(req: HttpRequest, body: web::Bytes, verbose: web::Data<boo
             let header_name = name.as_str().to_lowercase();
             if !reserved_headers.contains(header_name.as_str())
                 && header_name != INTERNAL_STATUS_CODE_HEADER.to_lowercase()
-                && header_name != INTERNAL_RESPONSE_BODY_HEADER.to_lowercase() {
+                && header_name != INTERNAL_RESPONSE_BODY_HEADER.to_lowercase()
+            {
                 if let Ok(header_value) = value.to_str() {
                     println!("     {}: {}", name, header_value);
                 }
@@ -139,14 +143,73 @@ async fn echo_handler(req: HttpRequest, body: web::Bytes, verbose: web::Data<boo
     Ok(response.body(response_body))
 }
 
+async fn whoami_handler(req: HttpRequest, body: web::Bytes) -> ActixResult<HttpResponse> {
+    let connection_info = req.connection_info();
+    let host = connection_info.host().to_string();
+    let scheme = connection_info.scheme().to_string();
+    let query = req.query_string().to_string();
+    let path = req.path().to_string();
+    let url = if query.is_empty() {
+        format!("{}://{}{}", scheme, host, path)
+    } else {
+        format!("{}://{}{}?{}", scheme, host, path, query)
+    };
+
+    let server_hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string());
+    let client_ip = connection_info
+        .realip_remote_addr()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "unknown".to_string());
+    let peer_addr = req
+        .peer_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let mut response = String::new();
+    response.push_str(&format!("Hostname: {}\n", server_hostname));
+    response.push_str(&format!("Host: {}\n", host));
+    response.push_str(&format!("Scheme: {}\n", scheme));
+    response.push_str(&format!("URL: {}\n", url));
+    response.push_str(&format!("Method: {}\n", req.method()));
+    response.push_str(&format!("Path: {}\n", path));
+    response.push_str(&format!("Query: {}\n", query));
+    response.push_str(&format!("Version: {:?}\n", req.version()));
+    response.push_str(&format!("Client-IP: {}\n", client_ip));
+    response.push_str(&format!("Remote-Addr: {}\n", peer_addr));
+    response.push_str("\nHeaders:\n");
+
+    for (name, value) in req.headers() {
+        let header_value = value.to_str().unwrap_or("<non-utf8>");
+        response.push_str(&format!("{}: {}\n", name, header_value));
+    }
+
+    if !body.is_empty() {
+        response.push_str("\nBody:\n");
+        response.push_str(&String::from_utf8_lossy(&body));
+        response.push('\n');
+    }
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .body(response))
+}
+
 fn validate_hostname(hostname: &str) -> Result<IpAddr, String> {
-    IpAddr::from_str(hostname)
-        .map_err(|_| format!("Invalid hostname '{}'. Must be a valid IP address.", hostname))
+    IpAddr::from_str(hostname).map_err(|_| {
+        format!(
+            "Invalid hostname '{}'. Must be a valid IP address.",
+            hostname
+        )
+    })
 }
 
 fn validate_port(port_str: &str) -> Result<u16, String> {
-    let port: u16 = port_str.parse()
-        .map_err(|_| format!("Invalid port '{}'. Must be a number between 1 and 65535.", port_str))?;
+    let port: u16 = port_str.parse().map_err(|_| {
+        format!(
+            "Invalid port '{}'. Must be a number between 1 and 65535.",
+            port_str
+        )
+    })?;
 
     if port == 0 {
         return Err("Port cannot be 0. Must be between 1 and 65535.".to_string());
@@ -162,7 +225,10 @@ async fn main() -> std::io::Result<()> {
 
     // Load settings from Settings.toml, with fallback defaults
     let settings = Settings::load().unwrap_or_else(|e| {
-        eprintln!("Warning: Could not load Settings.toml ({}). Using default values.", e);
+        eprintln!(
+            "Warning: Could not load Settings.toml ({}). Using default values.",
+            e
+        );
         Settings {
             host: "127.0.0.1".to_string(),
             port: 8001,
@@ -179,7 +245,7 @@ async fn main() -> std::io::Result<()> {
                 .long("hostname")
                 .value_name("HOSTNAME")
                 .help("The hostname/IP address to bind to")
-                .default_value("127.0.0.1")
+                .default_value("127.0.0.1"),
         )
         .arg(
             Arg::new("port")
@@ -187,19 +253,20 @@ async fn main() -> std::io::Result<()> {
                 .long("port")
                 .value_name("PORT")
                 .help("The port number to bind to")
-                .default_value("8001")
+                .default_value("8001"),
         )
         .arg(
             Arg::new("verbose")
                 .short('v')
                 .long("verbose")
                 .help("Enable verbose logging of requests and responses")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
 
     // Extract hostname - use CLI arg if provided, otherwise use settings
-    let hostname_str = matches.get_one::<String>("hostname")
+    let hostname_str = matches
+        .get_one::<String>("hostname")
         .map(|s| s.as_str())
         .unwrap_or(&settings.host);
     let hostname = match validate_hostname(hostname_str) {
@@ -229,10 +296,19 @@ async fn main() -> std::io::Result<()> {
     let bind_address = SocketAddr::new(hostname, port);
 
     println!("🚀 Starting Echo Server on http://{}", bind_address);
-    println!("⚙️  Configuration loaded from Settings.toml (host: {}, port: {})", settings.host, settings.port);
+    println!(
+        "⚙️  Configuration loaded from Settings.toml (host: {}, port: {})",
+        settings.host, settings.port
+    );
     println!("📋 Headers that are relevant for the request only, like 'host' or 'user-agent' won't be echoed.");
-    println!("⚙️  Use '{}' header to override response status code", INTERNAL_STATUS_CODE_HEADER);
-    println!("📝 Use '{}' header to override response body", INTERNAL_RESPONSE_BODY_HEADER);
+    println!(
+        "⚙️  Use '{}' header to override response status code",
+        INTERNAL_STATUS_CODE_HEADER
+    );
+    println!(
+        "📝 Use '{}' header to override response body",
+        INTERNAL_RESPONSE_BODY_HEADER
+    );
     if verbose {
         println!("🔍 Verbose mode enabled - requests and responses will be logged");
     }
@@ -242,13 +318,14 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(verbose))
             .wrap(Logger::default())
+            .route("/", web::to(whoami_handler))
             .route("/{path:.*}", web::to(echo_handler))
             .default_service(web::to(echo_handler))
     })
-        .bind(&bind_address)?
-        .workers(num_cpus::get())
-        .run()
-        .await
+    .bind(&bind_address)?
+    .workers(num_cpus::get())
+    .run()
+    .await
 }
 
 #[cfg(test)]

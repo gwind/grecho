@@ -1,7 +1,7 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /app
 
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+#ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 #RUN mkdir -p /root/.cargo
 #RUN echo '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"' > /root/.cargo/config.toml
@@ -18,7 +18,8 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/rust-echo-server /usr/local/bin/grecho
+USER 10001:10001
+COPY --from=builder /app/target/release/grecho /usr/local/bin/grecho
 
 EXPOSE 8080
 
